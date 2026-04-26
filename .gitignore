@@ -1,0 +1,39 @@
+# Environment variables (sensitive data)
+.env
+.env.*
+**/.env
+**/.env.*
+
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+dist-ssr/
+client/dist/
+build/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+.venv/
+env/
+flask/venv/
+
+# Logs
+*.log
+logs/
+
+# IDE / OS
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+
+# AI Models
+*.pkl
+# flask/model_cache.pkl
