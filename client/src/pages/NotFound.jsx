@@ -1,5 +1,5 @@
-"use client";
 import { Link } from "react-router-dom";
+
 export default function NotFound() {
     return (<div className="min-h-screen flex items-center justify-center bg-gray-100 px-4">
       <div className="max-w-2xl text-center">
