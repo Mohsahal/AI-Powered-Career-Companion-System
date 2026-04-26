@@ -13,7 +13,7 @@ const auth = async (req, res, next) => {
       });
     }
 
-    console.log('Auth middleware: Token received, length:', token.length);
+    // console.log('Auth middleware: Token received, length:', token.length);
 
     // Verify token
     const decoded = jwt.verify(token, process.env.JWT_SECRET || 'your-secret-key');
