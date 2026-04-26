@@ -14,9 +14,10 @@ router.post("/ats-evaluate", upload.single("resume"), aiController.atsEvaluate);
 // Skill gap analysis
 router.post("/skill-gap-analysis", upload.single("resume"), aiController.skillGapAnalysis);
 
-// Additional AI routes (to be refactored into controllers)
-router.post("/generate-summary", async (req, res) => {
-    // Legacy logic for now
-});
+// AI Generation routes
+router.post("/generate-summary", aiController.generateSummary);
+router.post("/generate-experience", aiController.generateExperience);
+router.post("/generate-project", aiController.generateProject);
+
 
 module.exports = router;
