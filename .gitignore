@@ -8,10 +8,7 @@
 node_modules/
 
 # Build output
-dist/
-dist-ssr/
-client/dist/
-build/
+
 
 # Python
 __pycache__/
