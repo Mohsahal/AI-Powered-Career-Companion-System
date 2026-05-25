@@ -24,10 +24,16 @@ const Auth = () => {
             navigate("/dashboard", { replace: true });
         }
     }, [isAuthenticated, navigate]);
-    // Determine initial tab from location state
+    // Determine initial tab from location state or Google OAuth redirect
     useEffect(() => {
         if (location.state?.activeTab) {
             setActiveTab(location.state.activeTab);
+            return;
+        }
+        const savedTab = sessionStorage.getItem('google_auth_tab');
+        if (savedTab === 'login' || savedTab === 'signup') {
+            setActiveTab(savedTab);
+            sessionStorage.removeItem('google_auth_tab');
         }
     }, [location.state]);
     // Login form state
@@ -170,17 +176,14 @@ const Auth = () => {
             }
             const data = await backendResponse.json();
             console.log('Backend Authentication Success:', data);
-            // If this resulted in a new account creation (status 201) or user is on signup tab,
-            // do NOT auto-login. Ask the user to sign in explicitly.
-            if (backendResponse.status === 201 || activeTab === "signup") {
+
+            if (data.isNewUser || backendResponse.status === 201) {
                 toast({
                     title: "Account Created",
-                    description: "Your Google account was linked. Please sign in to continue.",
+                    description: "Welcome! Signing you in with Google.",
                 });
-                setActiveTab("login");
-                return;
             }
-            // Existing user logging in with Google → proceed to app
+
             await loginWithGoogle(data.token, data.user);
             navigate("/dashboard", { replace: true });
         }
@@ -205,7 +208,9 @@ const Auth = () => {
         onSuccess: handleGoogleSuccess,
         onError: handleGoogleError,
         flow: 'implicit',
-        scope: 'email profile'
+        scope: 'openid email profile',
+        ux_mode: 'redirect',
+        redirect_uri: `${window.location.origin}/auth`,
     });
     const formVariants = {
         hidden: { opacity: 0, y: 20 },
@@ -240,7 +245,7 @@ const Auth = () => {
             </p>
             <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}>
               <Button onClick={() => setActiveTab(activeTab === "login" ? "signup" : "login")} className="bg-transparent border-2 border-white text-white hover:bg-white hover:text-[#A044F5] transition-all px-10 py-3 rounded-full text-lg font-semibold">
-                {activeTab === "login" ? "SIGN IN" : "SIGN UP"}
+                {activeTab === "login" ? "SIGN UP" : "SIGN IN"}
               </Button>
             </motion.div>
           </motion.div>
@@ -257,7 +262,10 @@ const Auth = () => {
               </h2>
               <motion.div variants={formVariants} initial="hidden" animate="visible" className="flex justify-center space-x-4 mb-6">
                 <SocialButton icon={<Facebook size={20}/>}/>
-                <SocialButton icon={<span className="text-lg font-bold">G+</span>} onClick={() => initiateGoogleLogin()}/>
+                <SocialButton icon={<span className="text-lg font-bold">G+</span>} onClick={() => {
+                  sessionStorage.setItem('google_auth_tab', activeTab);
+                  initiateGoogleLogin();
+                }}/>
                 <SocialButton icon={<Linkedin size={20}/>}/>
               </motion.div>
               <p className="text-gray-600 text-sm">

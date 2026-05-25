@@ -9,6 +9,45 @@ const authMiddleware = require('../middleware/auth');
 // Use the Google Client ID from environment variables
 const googleClient = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
 
+async function fetchGoogleUserInfo(accessToken) {
+  const userInfoResponse = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
+    headers: { Authorization: `Bearer ${accessToken}` }
+  });
+
+  if (!userInfoResponse.ok) {
+    const errText = await userInfoResponse.text().catch(() => '');
+    throw new Error(`Failed to get user info from Google (${userInfoResponse.status})${errText ? `: ${errText}` : ''}`);
+  }
+
+  return userInfoResponse.json();
+}
+
+function resolveGoogleDisplayName(userInfo) {
+  const { name, given_name, family_name, email } = userInfo;
+  if (name && name.trim()) return name.trim();
+  const fromParts = [given_name, family_name].filter(Boolean).join(' ').trim();
+  if (fromParts) return fromParts;
+  if (email) return email.split('@')[0];
+  return 'Google User';
+}
+
+function buildUserResponse(user) {
+  return {
+    id: user._id,
+    email: user.email,
+    name: user.name,
+    profileImage: user.profileImage ?? null
+  };
+}
+
+function issueAuthToken(user) {
+  return jwt.sign(
+    { id: user._id },
+    process.env.JWT_SECRET || 'your-secret-key',
+    { expiresIn: '7d' }
+  );
+}
+
 // Login route
 router.post('/login', async (req, res) => {
   try {
@@ -120,73 +159,53 @@ router.post('/google-login', async (req, res) => {
       return res.status(400).json({ message: 'Access token is missing' });
     }
 
-    console.log('Verifying Google access token...');
-    
-    // Get user info from Google using the access token
-    const userInfoResponse = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
-      headers: {
-        Authorization: `Bearer ${accessToken}`
-      }
-    });
-
-    if (!userInfoResponse.ok) {
-      throw new Error('Failed to get user info from Google');
-    }
-
-    const userInfo = await userInfoResponse.json();
-    console.log('Google user info:', userInfo);
-
-    const { sub: googleId, email, name, picture } = userInfo;
+    const userInfo = await fetchGoogleUserInfo(accessToken);
+    const { sub: googleId, email, picture } = userInfo;
 
     if (!email) {
       return res.status(401).json({ message: 'Invalid Google user info' });
     }
 
-    // Check if user exists in your database
     let user = await User.findOne({ email });
 
     if (user) {
-      // Update user's Google ID and profile image if not set
-      if (!user.googleId || !user.profileImage) {
+      let updated = false;
+      if (!user.googleId) {
         user.googleId = googleId;
+        updated = true;
+      }
+      if (picture && !user.profileImage) {
         user.profileImage = picture;
+        updated = true;
+      }
+      if (!user.name?.trim()) {
+        user.name = resolveGoogleDisplayName(userInfo);
+        updated = true;
+      }
+      if (updated) {
         await user.save();
       }
 
-      // Generate JWT
-      const token = jwt.sign(
-        { id: user._id },
-        process.env.JWT_SECRET || 'your-secret-key',
-        { expiresIn: '7d' }
-      );
-
-      const userResponse = {
-        id: user._id,
-        email: user.email,
-        name: user.name,
-        profileImage: user.profileImage
-      };
-
+      const token = issueAuthToken(user);
       return res.json({
         token,
-        user: userResponse
+        user: buildUserResponse(user)
       });
     }
 
-    // User not found -> do not create here
     return res.status(404).json({
       message: 'Account not created. Please sign up first.'
     });
   } catch (error) {
     console.error('Google authentication error:', error);
-    res.status(500).json({ 
+    res.status(500).json({
       message: 'Google authentication failed',
-      error: error.message 
+      error: error.message
     });
   }
 });
 
-// Google Signup route (creates a new user if not exists)
+// Google Signup route (creates a new user, or signs in if account already exists)
 router.post('/google-signup', async (req, res) => {
   try {
     const { accessToken } = req.body;
@@ -195,62 +214,67 @@ router.post('/google-signup', async (req, res) => {
       return res.status(400).json({ message: 'Access token is missing' });
     }
 
-    const userInfoResponse = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
-      headers: {
-        Authorization: `Bearer ${accessToken}`
-      }
-    });
-
-    if (!userInfoResponse.ok) {
-      throw new Error('Failed to get user info from Google');
-    }
-
-    const userInfo = await userInfoResponse.json();
-    const { sub: googleId, email, name, picture } = userInfo;
+    const userInfo = await fetchGoogleUserInfo(accessToken);
+    const { sub: googleId, email, picture } = userInfo;
 
     if (!email) {
       return res.status(401).json({ message: 'Invalid Google user info' });
     }
 
+    const displayName = resolveGoogleDisplayName(userInfo);
     let user = await User.findOne({ email });
+    let isNewUser = false;
 
     if (user) {
-      return res.status(409).json({ message: 'Account already exists. Please log in.' });
+      let updated = false;
+      if (!user.googleId) {
+        user.googleId = googleId;
+        updated = true;
+      }
+      if (picture && !user.profileImage) {
+        user.profileImage = picture;
+        updated = true;
+      }
+      if (!user.name?.trim()) {
+        user.name = displayName;
+        updated = true;
+      }
+      if (updated) {
+        await user.save();
+      }
+    } else {
+      user = new User({
+        email,
+        name: displayName,
+        googleId,
+        profileImage: picture || null
+      });
+      await user.save();
+      isNewUser = true;
     }
 
-    // Create new user
-    user = new User({
-      email,
-      name,
-      googleId,
-      profileImage: picture
-    });
-
-    await user.save();
-
-    const token = jwt.sign(
-      { id: user._id },
-      process.env.JWT_SECRET || 'your-secret-key',
-      { expiresIn: '7d' }
-    );
-
-    const userResponse = {
-      id: user._id,
-      email: user.email,
-      name: user.name,
-      profileImage: user.profileImage
-    };
-
-    // Return 201 on successful signup. Client may choose not to auto-login.
-    return res.status(201).json({
+    const token = issueAuthToken(user);
+    return res.status(isNewUser ? 201 : 200).json({
       token,
-      user: userResponse
+      user: buildUserResponse(user),
+      isNewUser
     });
   } catch (error) {
     console.error('Google signup error:', error);
-    res.status(500).json({ 
+    if (error.name === 'ValidationError') {
+      return res.status(400).json({
+        message: 'Invalid user data from Google',
+        error: error.message
+      });
+    }
+    if (error.code === 11000) {
+      return res.status(409).json({
+        message: 'Account already exists. Please log in.'
+      });
+    }
+    res.status(500).json({
       message: 'Google signup failed',
-      error: error.message 
+      error: error.message
     });
   }
 });
