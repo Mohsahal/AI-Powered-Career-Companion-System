@@ -228,7 +228,7 @@ exports.generateSummary = async (req, res) => {
       return res.status(400).json({ success: false, error: "Job title is required" });
     }
 
-    const model = ai.getGenerativeModel({ model: "gemini-1.5-flash" });
+    const model = ai.getGenerativeModel({ model: "gemini-2.5-flash" });
     const prompt = `Generate a professional resume summary for a ${jobTitle}. The summary should be concise (2-3 sentences), highlight key skills, and sound professional. Don't use placeholders.`;
 
     const result = await model.generateContent(prompt);
@@ -248,7 +248,7 @@ exports.generateExperience = async (req, res) => {
       return res.status(400).json({ success: false, error: "Position and company are required" });
     }
 
-    const model = ai.getGenerativeModel({ model: "gemini-1.5-flash" });
+    const model = ai.getGenerativeModel({ model: "gemini-2.5-flash" });
     const prompt = `Generate a professional resume experience description for a ${position} at ${company} in the ${industry || 'Technology'} industry.
     Provide 3-4 bullet points highlighting responsibilities and achievements. Use action verbs. Don't use placeholders.`;
 
@@ -269,7 +269,7 @@ exports.generateProject = async (req, res) => {
       return res.status(400).json({ success: false, error: "Project name is required" });
     }
 
-    const model = ai.getGenerativeModel({ model: "gemini-1.5-flash" });
+    const model = ai.getGenerativeModel({ model: "gemini-2.5-flash" });
     const techString = Array.isArray(technologies) ? technologies.join(", ") : technologies;
     const prompt = `Generate a professional resume project description for a project named "${projectName}" ${techString ? `using ${techString}` : ''} ${role ? `as a ${role}` : ''}.
     Provide 2-3 bullet points. Don't use placeholders.`;
