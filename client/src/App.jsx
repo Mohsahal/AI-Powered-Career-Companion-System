@@ -31,15 +31,11 @@ import QuestionsPage from "./pages/MockInterview/QuestionsPage";
 import ResourcesPage from "./pages/MockInterview/ResourcesPage";
 import AboutMockPage from "./pages/MockInterview/AboutMockPage";
 // import Header from "@/components/Header";
-import { GoogleOAuthProvider } from "@react-oauth/google";
 import NotFound from "@/pages/NotFound";
 import SkillGapAnalysisPage from "@/pages/SkillGapAnalysis";
 // import SkillGap from "@/pages/SkillGap";
 const queryClient = new QueryClient();
-const googleClientId = import.meta?.env?.VITE_GOOGLE_CLIENT_ID ||
-    "291026471342-9ecgtoolsoh9suc0vl5op1dkqvf2h0ra.apps.googleusercontent.com";
-const App = () => (<GoogleOAuthProvider clientId={googleClientId}>
-    <QueryClientProvider client={queryClient}>
+const App = () => (<QueryClientProvider client={queryClient}>
       <AuthProvider>
         <ResumeProvider>
           <TooltipProvider>
@@ -137,6 +133,5 @@ const App = () => (<GoogleOAuthProvider clientId={googleClientId}>
           </TooltipProvider>
         </ResumeProvider>
       </AuthProvider>
-    </QueryClientProvider>
-  </GoogleOAuthProvider>);
+    </QueryClientProvider>);
 export default App;

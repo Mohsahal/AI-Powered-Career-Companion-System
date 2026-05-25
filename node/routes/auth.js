@@ -2,33 +2,12 @@ const express = require('express');
 const router = express.Router();
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
+const mongoose = require('mongoose');
 const User = require('../models/User');
-const { OAuth2Client } = require('google-auth-library');
 const authMiddleware = require('../middleware/auth');
 
-// Use the Google Client ID from environment variables
-const googleClient = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
-
-async function fetchGoogleUserInfo(accessToken) {
-  const userInfoResponse = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
-    headers: { Authorization: `Bearer ${accessToken}` }
-  });
-
-  if (!userInfoResponse.ok) {
-    const errText = await userInfoResponse.text().catch(() => '');
-    throw new Error(`Failed to get user info from Google (${userInfoResponse.status})${errText ? `: ${errText}` : ''}`);
-  }
-
-  return userInfoResponse.json();
-}
-
-function resolveGoogleDisplayName(userInfo) {
-  const { name, given_name, family_name, email } = userInfo;
-  if (name && name.trim()) return name.trim();
-  const fromParts = [given_name, family_name].filter(Boolean).join(' ').trim();
-  if (fromParts) return fromParts;
-  if (email) return email.split('@')[0];
-  return 'Google User';
+function isDatabaseReady() {
+  return mongoose.connection.readyState === 1;
 }
 
 function buildUserResponse(user) {
@@ -58,16 +37,19 @@ router.post('/login', async (req, res) => {
       return res.status(400).json({ message: 'Email and password are required' });
     }
 
-    // Check if user exists
-    const user = await User.findOne({ email });
+    if (!isDatabaseReady()) {
+      return res.status(503).json({ message: 'Database unavailable. Please try again shortly.' });
+    }
+
+    const normalizedEmail = email.toLowerCase().trim();
+    const user = await User.findOne({ email: normalizedEmail });
     if (!user) {
       return res.status(401).json({ message: 'Invalid credentials' });
     }
 
-    // Check if user has a password (not a Google-only user)
     if (!user.password) {
-      return res.status(401).json({ 
-        message: 'This account was created with Google. Please use Google Sign-In or reset your password.' 
+      return res.status(401).json({
+        message: 'This account has no password set. Use forgot password to set one.'
       });
     }
 
@@ -106,24 +88,35 @@ router.post('/signup', async (req, res) => {
   try {
     const { email, password, name } = req.body;
 
-    // Check if user already exists
-    let user = await User.findOne({ email });
+    if (!email || !password || !name) {
+      return res.status(400).json({ message: 'Name, email, and password are required' });
+    }
+
+    if (password.length < 6) {
+      return res.status(400).json({ message: 'Password must be at least 6 characters' });
+    }
+
+    if (!isDatabaseReady()) {
+      return res.status(503).json({ message: 'Database unavailable. Please try again shortly.' });
+    }
+
+    const normalizedEmail = email.toLowerCase().trim();
+    const trimmedName = name.trim();
+
+    let user = await User.findOne({ email: normalizedEmail });
     if (user) {
       return res.status(400).json({ message: 'User already exists' });
     }
 
-    // Create new user
+    const salt = await bcrypt.genSalt(10);
+    const hashedPassword = await bcrypt.hash(password, salt);
+
     user = new User({
-      email,
-      password,
-      name
+      email: normalizedEmail,
+      password: hashedPassword,
+      name: trimmedName
     });
 
-    // Hash password
-    const salt = await bcrypt.genSalt(10);
-    user.password = await bcrypt.hash(password, salt);
-
-    // Save user
     await user.save();
 
     // Create token
@@ -146,140 +139,17 @@ router.post('/signup', async (req, res) => {
     });
   } catch (error) {
     console.error('Signup error:', error);
+    if (error.name === 'ValidationError') {
+      return res.status(400).json({ message: error.message });
+    }
+    if (error.code === 11000) {
+      return res.status(400).json({ message: 'User already exists' });
+    }
     res.status(500).json({ message: 'Server error' });
   }
 });
 
-// Google Login route (does NOT create a new user)
-router.post('/google-login', async (req, res) => {
-  try {
-    const { accessToken } = req.body;
-
-    if (!accessToken) {
-      return res.status(400).json({ message: 'Access token is missing' });
-    }
-
-    const userInfo = await fetchGoogleUserInfo(accessToken);
-    const { sub: googleId, email, picture } = userInfo;
-
-    if (!email) {
-      return res.status(401).json({ message: 'Invalid Google user info' });
-    }
-
-    let user = await User.findOne({ email });
-
-    if (user) {
-      let updated = false;
-      if (!user.googleId) {
-        user.googleId = googleId;
-        updated = true;
-      }
-      if (picture && !user.profileImage) {
-        user.profileImage = picture;
-        updated = true;
-      }
-      if (!user.name?.trim()) {
-        user.name = resolveGoogleDisplayName(userInfo);
-        updated = true;
-      }
-      if (updated) {
-        await user.save();
-      }
-
-      const token = issueAuthToken(user);
-      return res.json({
-        token,
-        user: buildUserResponse(user)
-      });
-    }
-
-    return res.status(404).json({
-      message: 'Account not created. Please sign up first.'
-    });
-  } catch (error) {
-    console.error('Google authentication error:', error);
-    res.status(500).json({
-      message: 'Google authentication failed',
-      error: error.message
-    });
-  }
-});
-
-// Google Signup route (creates a new user, or signs in if account already exists)
-router.post('/google-signup', async (req, res) => {
-  try {
-    const { accessToken } = req.body;
-
-    if (!accessToken) {
-      return res.status(400).json({ message: 'Access token is missing' });
-    }
-
-    const userInfo = await fetchGoogleUserInfo(accessToken);
-    const { sub: googleId, email, picture } = userInfo;
-
-    if (!email) {
-      return res.status(401).json({ message: 'Invalid Google user info' });
-    }
-
-    const displayName = resolveGoogleDisplayName(userInfo);
-    let user = await User.findOne({ email });
-    let isNewUser = false;
-
-    if (user) {
-      let updated = false;
-      if (!user.googleId) {
-        user.googleId = googleId;
-        updated = true;
-      }
-      if (picture && !user.profileImage) {
-        user.profileImage = picture;
-        updated = true;
-      }
-      if (!user.name?.trim()) {
-        user.name = displayName;
-        updated = true;
-      }
-      if (updated) {
-        await user.save();
-      }
-    } else {
-      user = new User({
-        email,
-        name: displayName,
-        googleId,
-        profileImage: picture || null
-      });
-      await user.save();
-      isNewUser = true;
-    }
-
-    const token = issueAuthToken(user);
-    return res.status(isNewUser ? 201 : 200).json({
-      token,
-      user: buildUserResponse(user),
-      isNewUser
-    });
-  } catch (error) {
-    console.error('Google signup error:', error);
-    if (error.name === 'ValidationError') {
-      return res.status(400).json({
-        message: 'Invalid user data from Google',
-        error: error.message
-      });
-    }
-    if (error.code === 11000) {
-      return res.status(409).json({
-        message: 'Account already exists. Please log in.'
-      });
-    }
-    res.status(500).json({
-      message: 'Google signup failed',
-      error: error.message
-    });
-  }
-});
-
-module.exports = router; 
+module.exports = router;
  
 // Profile routes
 router.get('/me', authMiddleware, async (req, res) => {

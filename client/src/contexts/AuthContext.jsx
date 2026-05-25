@@ -109,31 +109,6 @@ export const AuthProvider = ({ children }) => {
             setIsLoading(false);
         }
     };
-    // Google Login functionality
-    const loginWithGoogle = async (token, userData) => {
-        setIsLoading(true);
-        try {
-            setUser(userData);
-            localStorage.setItem('futurefind_user', JSON.stringify(userData));
-            localStorage.setItem('futurefind_token', token);
-            toast({
-                title: "Login successful",
-                description: `Welcome back, ${userData.name}!`,
-            });
-        }
-        catch (error) {
-            console.error('Google login failed:', error);
-            toast({
-                title: "Login failed",
-                description: error instanceof Error ? error.message : "Google authentication failed.",
-                variant: "destructive"
-            });
-            throw error;
-        }
-        finally {
-            setIsLoading(false);
-        }
-    };
     // Signup functionality
     const signup = async (email, password, name) => {
         setIsLoading(true);
@@ -189,7 +164,6 @@ export const AuthProvider = ({ children }) => {
             isLoading,
             login,
             signup,
-            loginWithGoogle,
             logout,
             getToken
         }}>

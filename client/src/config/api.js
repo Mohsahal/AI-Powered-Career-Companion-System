@@ -1,13 +1,28 @@
 // API Configuration
-export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:1000/api";
+const PRODUCTION_API_URL =
+    "https://ai-powered-career-companion-system-22uq.onrender.com/api";
+
+function resolveApiBaseUrl() {
+    const envUrl = import.meta.env.VITE_API_BASE_URL;
+    if (envUrl) {
+        return envUrl.replace(/\/$/, "");
+    }
+    if (import.meta.env.PROD && typeof window !== "undefined") {
+        const host = window.location.hostname;
+        if (host.includes("onrender.com") || host.includes("futurefind")) {
+            return PRODUCTION_API_URL;
+        }
+    }
+    return "http://localhost:1000/api";
+}
+
+export const API_BASE_URL = resolveApiBaseUrl();
 // API endpoints for Node.js backend
 export const API_ENDPOINTS = {
     // Direct endpoints (for backward compatibility with AuthContext)
     LOGIN: `${API_BASE_URL}/auth/login`,
     REGISTER: `${API_BASE_URL}/auth/signup`,
     PROFILE_ME: `${API_BASE_URL}/auth/me`,
-    GOOGLE_LOGIN: `${API_BASE_URL}/auth/google-login`,
-    GOOGLE_SIGNUP: `${API_BASE_URL}/auth/google-signup`,
     RESUMES: `${API_BASE_URL}/resume`,
     RESUME_BY_ID: (id) => `${API_BASE_URL}/resume/${id}`,
     INTERVIEWS: `${API_BASE_URL}/interviews`,
@@ -17,8 +32,6 @@ export const API_ENDPOINTS = {
         REGISTER: `${API_BASE_URL}/auth/signup`,
         LOGOUT: `${API_BASE_URL}/auth/logout`,
         PROFILE: `${API_BASE_URL}/auth/me`,
-        GOOGLE_LOGIN: `${API_BASE_URL}/auth/google-login`,
-        GOOGLE_SIGNUP: `${API_BASE_URL}/auth/google-signup`,
     },
     QUESTIONS: {
         GENERATE: `${API_BASE_URL}/ai/generate-questions`,
